@@ -298,6 +298,37 @@ def build_fig_fluxo_potencia(fp: dict, dark: bool) -> go.Figure:
     return fig
 
 
+def _op_on_curve(tn: dict, res: dict):
+    """Retorna (Te_op, n_op) projetado sobre a curva T×n.
+
+    Usa Te_ss da simulação e interpola na região estável (0 < s < s_max)
+    para encontrar a velocidade correspondente na curva. Isso garante que
+    o ponto fique sobre a curva com o valor de torque correto.
+    """
+    Te_ss = float(res.get("Te_ss", 0.0))
+    if Te_ss <= 0:
+        return None, None
+
+    s_arr  = tn["s"]
+    Te_arr = tn["Te"]
+    n_arr  = tn["n_rpm"]
+
+    # região estável do motor: s entre 0 e s_max (Te cresce monotonicamente com s)
+    mask = (s_arr > 0) & (s_arr <= tn["s_max"])
+    if not mask.any():
+        return None, None
+
+    Te_stable = Te_arr[mask]
+    n_stable  = n_arr[mask]
+
+    if Te_ss > Te_stable.max():
+        return None, None  # além do torque de pull-out
+
+    # interpolação: Te_stable crescente → n_stable decrescente
+    n_op  = float(np.interp(Te_ss, Te_stable, n_stable))
+    return Te_ss, n_op
+
+
 def render_curva_tn(mp, res: dict, dark: bool, decimals: int, render_plotly_fn) -> None:
     """Renderiza a seção da curva T×n e fluxo de potência na UI."""
     st.divider()
@@ -305,8 +336,7 @@ def render_curva_tn(mp, res: dict, dark: bool, decimals: int, render_plotly_fn) 
 
     with st.expander("Ver Curva T×n (Torque × Velocidade)", expanded=False):
         tn    = calc_curva_tn(mp)
-        Te_op = float(res["Te_ss"]) if "Te_ss" in res else None
-        n_op  = float(res["n_ss"])  if "n_ss"  in res else None
+        Te_op, n_op = _op_on_curve(tn, res)
 
         fig_tn = build_fig_tn(tn, dark, Te_op=Te_op, n_op=n_op)
         render_plotly_fn(fig_tn, div_id="ems-tn")

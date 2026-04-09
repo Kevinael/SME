@@ -95,25 +95,6 @@ def build_fig_sidebyside(res, var_keys, var_labels, dark, t_events, decimals=2,
         ))
         for te in (t_events or []):
             fig.add_vline(x=te, line_dash="dot", line_color="#000000", line_width=1.1)
-        # marcador de pico
-        y_arr   = np.asarray(res[key])
-        pk_idx  = int(np.argmax(np.abs(y_arr)))
-        pk_val  = float(y_arr[pk_idx])
-        pk_t    = float(t[pk_idx])
-        fig.add_trace(go.Scatter(
-            x=[pk_t], y=[pk_val], mode="markers", name="Pico",
-            marker=dict(color="#ef4444", size=8, symbol="triangle-down" if pk_val >= 0 else "triangle-up"),
-            hovertemplate=f"Pico: {pk_val:.{decimals}f}<br>t = {pk_t:.4f} s<extra></extra>",
-            showlegend=False,
-        ))
-        # linha de RMS em regime (se disponível)
-        rms_key = f"{key}_rms"
-        if rms_key in res:
-            rms_val = float(res[rms_key])
-            fig.add_hline(y=rms_val, line_dash="dash", line_color="#22c55e", line_width=1.1,
-                          annotation_text=f"RMS = {rms_val:.{decimals}f}",
-                          annotation_font_color="#22c55e", annotation_font_size=8,
-                          annotation_position="bottom right")
         fig.update_layout(
             title=dict(text=lbl, x=0.5, xanchor="center",
                        font=dict(size=12, color=th["fg"])),

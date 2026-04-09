@@ -85,8 +85,29 @@ def generate_pdf_report(exp_label: str, mp: MachineParams, res: dict,
     var_labels = var_labels or var_keys
     t_events   = t_events   or []
 
+    # ── Mapa de substituição Unicode → latin-1 ───────────────────────────────
+    _UNICODE_SAFE = {
+        '\u2014': '-',  '\u2013': '-',   # em dash, en dash
+        '\u2091': 'e',  '\u2090': 'a',   # subscript e, a
+        '\u209B': 's',  '\u1D63': 'r',   # subscript s, r
+        '\u2080': '0',  '\u2081': '1',   '\u2082': '2',  '\u2083': '3',
+        '\u2084': '4',  '\u2085': '5',   '\u2086': '6',  '\u2087': '7',
+        '\u2088': '8',  '\u2089': '9',   # subscript digits
+        '\u00B7': '.',                   # middle dot
+        '\u03C9': 'w',  '\u03B1': 'a',   '\u03B2': 'b',  '\u03B7': 'n',
+        '\u03C3': 's',  '\u03C6': 'phi', '\u03BB': 'lambda',
+    }
+
+    def _safe(text: str) -> str:
+        for ch, repl in _UNICODE_SAFE.items():
+            text = text.replace(ch, repl)
+        return text.encode('latin-1', errors='ignore').decode('latin-1')
+
     # ── Subclasse com cabecalho e rodape automaticos ───────────────────────
     class EMS_PDF(FPDF):
+        def normalize_text(self, text: str) -> str:
+            return super().normalize_text(_safe(text))
+
         def header(self):
             # Faixa cinza clara
             self.set_fill_color(230, 230, 230)
@@ -523,6 +544,198 @@ def generate_pdf_report(exp_label: str, mp: MachineParams, res: dict,
              "Valores calculados sobre o regime permanente (detecção automática de convergência) "
              "via integração RK4 do modelo 0dq de Krause.",
              border=0, align="C")
+
+    def _mpl_fig_to_pdf(mpl_fig, pdf_obj, width_mm=170):
+        """Salva figura matplotlib como PNG e insere no PDF."""
+        buf = io.BytesIO()
+        mpl_fig.savefig(buf, format="png", dpi=180, bbox_inches="tight", facecolor="white")
+        plt.close(mpl_fig)
+        buf.seek(0)
+        with tempfile_ctx() as tmp:
+            with open(tmp, "wb") as f_tmp:
+                f_tmp.write(buf.read())
+            pdf_obj.image(tmp, x=(210 - width_mm) / 2, w=width_mm)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SECAO 8 — CURVA T×n
+    # ══════════════════════════════════════════════════════════════════════
+    from curva_tn import calc_curva_tn, _torque_array, _extract_params
+    pdf.add_page()
+    section_title(pdf, "8. Curva Caracteristica T×n")
+    pdf.ln(2)
+    tn = calc_curva_tn(mp)
+    # Ponto de operação calculado pelo próprio modelo do circuito equivalente
+    # (usando o escorregamento s da simulação), garantindo que fique na curva.
+    s_op = float(res.get("s", 0.0)) if "s" in res else None
+    if s_op is not None and abs(s_op) > 1e-9:
+        V1, R1, X1, R2, X2, Xm, ws_mec, ns_param = _extract_params(mp)
+        Te_op = float(_torque_array(np.array([s_op]), V1, R1, X1, R2, X2, Xm, ws_mec)[0])
+        n_op  = ns_param * (1.0 - s_op)
+    else:
+        Te_op = None
+        n_op  = None
+
+    # figura matplotlib da curva T×n
+    fig_tn, ax_tn = plt.subplots(figsize=(10, 4.2))
+    fig_tn.patch.set_facecolor("white")
+    ns      = tn["n_sinc"]
+    s_arr   = tn["s"]
+    Te_arr  = tn["Te"]
+    n_pct   = tn["n_rpm"] / ns * 100.0
+    mask_m  = (s_arr > 0) & (s_arr <= 1.0)
+    mask_g  = s_arr < 0
+    mask_b  = s_arr > 1.0
+    ax_tn.plot(n_pct[mask_m], Te_arr[mask_m], color="#1d4ed8", lw=2,   label="Motor (0<s<=1)")
+    ax_tn.plot(n_pct[mask_g], Te_arr[mask_g], color="#059669", lw=2,   label="Gerador (s<0)")
+    ax_tn.plot(n_pct[mask_b], Te_arr[mask_b], color="#dc2626", lw=2,   label="Frenagem (s>1)")
+    ax_tn.plot(tn["n_max"] / ns * 100.0, tn["Te_max"], "o", color="#1d4ed8", ms=8,
+               label=f"Te,max = {tn['Te_max']:.1f} N.m")
+    ax_tn.plot(0.0, tn["Te_part"], "s", color="#1d4ed8", ms=7, fillstyle="none",
+               label=f"Te,p = {tn['Te_part']:.1f} N.m")
+    if Te_op is not None and n_op is not None:
+        ax_tn.plot(n_op / ns * 100.0, Te_op, "D", color="#d97706", ms=9,
+                   label=f"Operacao: {Te_op:.1f} N.m")
+    ax_tn.axvline(x=100.0, color="#9ca3af", lw=1, ls="--")
+    ax_tn.set_xlabel("Velocidade (% da velocidade sincrona)", fontsize=9)
+    ax_tn.set_ylabel("Torque eletromagnetico Te (N.m)", fontsize=9)
+    ax_tn.set_title("Curva Caracteristica T×n — Tres Regioes de Operacao", fontsize=10)
+    ax_tn.legend(fontsize=7, loc="upper right")
+    ax_tn.grid(True, color="#e5e7eb", lw=0.5)
+    ax_tn.set_facecolor("#f9fafc")
+    ax_tn.spines[["top", "right"]].set_visible(False)
+    fig_tn.tight_layout()
+    _mpl_fig_to_pdf(fig_tn, pdf)
+
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.set_text_color(80, 80, 80)
+    pdf.cell(0, 5,
+             f"Te,max = {tn['Te_max']:.2f} N.m | Te,partida = {tn['Te_part']:.2f} N.m | s(Te,max) = {tn['s_max']*100:.2f}%",
+             border=0, align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(5)
+    pdf.set_fill_color(200, 210, 240)
+    pdf.set_text_color(20, 20, 80)
+    pdf.set_font("Helvetica", "B", 10)
+    for lbl, w in [("  Grandeza", 110), ("Valor", 35), ("Unidade", 25)]:
+        pdf.cell(w, 7, lbl, border=0, fill=True)
+    pdf.ln(7)
+    tn_rows = [
+        ("Torque Maximo (pull-out)",      f"{tn['Te_max']:.4f}",     "N.m"),
+        ("Torque de Partida (s=1)",        f"{tn['Te_part']:.4f}",    "N.m"),
+        ("Escorregamento em Te,max",       f"{tn['s_max']*100:.3f}",  "%"),
+        ("Velocidade em Te,max",           f"{tn['n_max']:.1f}",      "RPM"),
+        ("Velocidade Sincrona",            f"{tn['n_sinc']:.1f}",     "RPM"),
+    ]
+    if Te_op is not None:
+        tn_rows.append(("Torque de regime (simulacao)", f"{Te_op:.4f}", "N.m"))
+    zebra_table(pdf, tn_rows, col_widths=[110, 35, 25], col_aligns=["L", "R", "L"])
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SECAO 9 — FLUXO DE POTENCIA
+    # ══════════════════════════════════════════════════════════════════════
+    from curva_tn import calc_fluxo_potencia
+    s_op = float(res.get("s", 0.0))
+    if abs(s_op) > 1e-6:
+        pdf.add_page()
+        section_title(pdf, "9. Fluxo de Potencia no Ponto de Operacao")
+        pdf.ln(2)
+        fp = calc_fluxo_potencia(s_op, mp)
+
+        # figura matplotlib do fluxo de potência
+        fp_labels = ["Pin", "Pcu1\n(cobre est.)", "Pag\n(entreferro)",
+                     "Pcu2\n(cobre rot.)", "Pmec\n(mecanica)", "Pout\n(saida)"]
+        fp_values = [fp["P_in"], fp["P_cu1"], fp["P_ag"], fp["P_cu2"], fp["P_mec"], fp["P_out"]]
+        fp_colors = ["#64748b", "#dc2626", "#1d4ed8", "#dc2626", "#059669", "#065f46"]
+        fig_fp, ax_fp = plt.subplots(figsize=(10, 3.2))
+        fig_fp.patch.set_facecolor("white")
+        bars = ax_fp.barh(fp_labels, fp_values, color=fp_colors, height=0.55)
+        for bar, val in zip(bars, fp_values):
+            ax_fp.text(bar.get_width() + max(fp_values) * 0.01, bar.get_y() + bar.get_height() / 2,
+                       f"{val:,.1f} W", va="center", fontsize=8)
+        ax_fp.set_xlabel("Potencia (W)", fontsize=9)
+        ax_fp.set_title(f"Fluxo de Potencia — {fp['region']} | eta = {fp['eta']:.1f}%", fontsize=10)
+        ax_fp.invert_yaxis()
+        ax_fp.grid(True, axis="x", color="#e5e7eb", lw=0.5)
+        ax_fp.set_facecolor("#f9fafc")
+        ax_fp.spines[["top", "right"]].set_visible(False)
+        fig_fp.tight_layout()
+        _mpl_fig_to_pdf(fig_fp, pdf)
+
+        pdf.ln(5)
+        pdf.set_fill_color(200, 210, 240)
+        pdf.set_text_color(20, 20, 80)
+        pdf.set_font("Helvetica", "B", 10)
+        for lbl, w in [("  Grandeza", 110), ("Valor", 35), ("Unidade", 25)]:
+            pdf.cell(w, 7, lbl, border=0, fill=True)
+        pdf.ln(7)
+        v_in,  u_in  = fmt_power(fp["P_in"])
+        v_ag,  u_ag  = fmt_power(fp["P_ag"])
+        v_mec, u_mec = fmt_power(fp["P_mec"])
+        v_out, u_out = fmt_power(fp["P_out"])
+        fp_rows = [
+            ("Regiao de Operacao",              fp["region"],              "-"),
+            ("Escorregamento (s)",               f"{fp['slip']*100:.3f}",   "%"),
+            ("Potencia de Entrada (Pin)",        v_in,                      u_in),
+            ("Perda no Cobre Estator (Pcu1)",    f"{fp['P_cu1']:.2f}",      "W"),
+            ("Potencia no Entreferro (Pag)",     v_ag,                      u_ag),
+            ("Perda no Cobre Rotor (Pcu2)",      f"{fp['P_cu2']:.2f}",      "W"),
+            ("Potencia Mecanica (Pmec)",          v_mec,                     u_mec),
+            ("Potencia de Saida (Pout)",         v_out,                     u_out),
+            ("Rendimento (eta)",                 f"{fp['eta']:.2f}",        "%"),
+            ("Corrente de Estator I1 (RMS)",     f"{fp['I1_rms']:.4f}",     "A"),
+            ("Corrente de Rotor I2 (RMS)",       f"{fp['I2_rms']:.4f}",     "A"),
+        ]
+        zebra_table(pdf, fp_rows, col_widths=[110, 35, 25], col_aligns=["L", "R", "L"])
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SECAO 10 — ANALISE HARMONICA (FFT)
+    # ══════════════════════════════════════════════════════════════════════
+    ac_keys = [k for k in var_keys
+               if k in ("ias", "ibs", "ics", "iar", "ibr", "icr", "Va", "Vb", "Vc")]
+    if ac_keys:
+        pdf.add_page()
+        section_title(pdf, "10. Analise Harmonica (FFT)")
+        pdf.ln(2)
+        key_to_lbl = dict(zip(var_keys, var_labels))
+        ss_start = int(res.get("_ss_start", 0))
+        for fft_key in ac_keys[:4]:
+            lbl = _safe(key_to_lbl.get(fft_key, fft_key))
+            y   = np.asarray(res[fft_key][ss_start:], dtype=float)
+            t   = np.asarray(res["t"][ss_start:],     dtype=float)
+            if len(y) < 4:
+                continue
+            dt   = float(t[1] - t[0]) if len(t) > 1 else 1e-3
+            N    = len(y)
+            yf   = np.abs(np.fft.rfft(y)) * 2.0 / N
+            freq = np.fft.rfftfreq(N, d=dt)
+            mask = freq <= 2000
+            freq, yf = freq[mask], yf[mask]
+            f1_idx     = int(np.argmax(yf[freq > 0.1])) + np.searchsorted(freq, 0.1)
+            f1         = float(freq[f1_idx]) if f1_idx < len(freq) else 60.0
+            harm_freqs = [f1 * k for k in [1, 3, 5, 7, 9] if f1 * k <= freq[-1]]
+
+            fig_fft, ax_fft = plt.subplots(figsize=(10, 2.8))
+            fig_fft.patch.set_facecolor("white")
+            ax_fft.bar(freq, yf, width=(freq[1]-freq[0]) if len(freq)>1 else 1,
+                       color="#1d4ed8", alpha=0.8)
+            for hf in harm_freqs:
+                ax_fft.axvline(x=hf, color="#dc2626", lw=1.0, ls="--")
+                ax_fft.text(hf, ax_fft.get_ylim()[1] * 0.9, f"{hf:.0f}Hz",
+                            color="#dc2626", fontsize=6, ha="center")
+            ax_fft.set_xlabel("Frequencia (Hz)", fontsize=9)
+            ax_fft.set_ylabel("Amplitude", fontsize=9)
+            ax_fft.set_title(f"Espectro de Amplitudes — {lbl}", fontsize=9)
+            ax_fft.set_facecolor("#f9fafc")
+            ax_fft.grid(True, color="#e5e7eb", lw=0.5)
+            ax_fft.spines[["top", "right"]].set_visible(False)
+            fig_fft.tight_layout()
+            _mpl_fig_to_pdf(fig_fft, pdf)
+
+            pdf.set_font("Helvetica", "I", 8)
+            pdf.set_text_color(80, 80, 80)
+            pdf.cell(0, 5, f"Espectro — {lbl}",
+                     border=0, align="C", new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(3)
 
     return bytes(pdf.output())
 

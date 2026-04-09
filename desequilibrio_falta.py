@@ -95,7 +95,7 @@ def render_desequilibrio_ui(config: dict, tmax: float = 2.0) -> None:
 
         t_deseq = st.number_input(
             "Instante de início do desequilíbrio (s)",
-            min_value=0.0, max_value=float(tmax), value=0.0, step=0.1, format="%.2f",
+            min_value=0.0, max_value=float(tmax), value=1.0, step=0.1, format="%.2f",
             help="O desequilíbrio começa a atuar neste instante. Use 0 para aplicar desde o início.",
         )
 

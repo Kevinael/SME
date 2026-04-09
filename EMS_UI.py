@@ -319,19 +319,19 @@ def render_experiment_config(mp: MachineParams) -> dict:
 
     if exp_type == "dol":
         config["Tl_final"] = st.number_input("Torque de carga — $T_l$ (N·m)", value=80.0, min_value=0.0, key=_WK["Tl_final"])
-        config["t_carga"]  = st.number_input("Instante de aplicação da carga — $t_{carga}$ (s)", value=0.1, min_value=0.0, key=_WK["t_carga"])
+        config["t_carga"]  = st.number_input("Instante de aplicação da carga — $t_{carga}$ (s)", value=1.0, min_value=0.0, key=_WK["t_carga"])
 
     elif exp_type == "yd":
         config["Tl_final"] = st.number_input("Torque de carga — $T_l$ (N·m)", value=80.0, min_value=0.0)
         config["t_2"]      = st.number_input("Instante de comutação Y → D — $t_2$ (s)", value=0.5, min_value=0.01)
-        config["t_carga"]  = st.number_input("Instante de aplicação da carga — $t_{carga}$ (s)", value=0.1, min_value=0.0)
+        config["t_carga"]  = st.number_input("Instante de aplicação da carga — $t_{carga}$ (s)", value=1.0, min_value=0.0)
         _ibox("A tensão em estrela é reduzida a V<sub>l</sub>&thinsp;/&thinsp;√3. A comutação para triângulo ocorre no instante t<sub>2</sub>.")
 
     elif exp_type == "comp":
         config["Tl_final"]      = st.number_input("Torque de carga — $T_l$ (N·m)", value=80.0, min_value=0.0)
         config["voltage_ratio"] = st.slider("Tap do autotransformador — $k$ (%)", 10, 95, 50) / 100.0
         config["t_2"]           = st.number_input("Instante de comutação — $t_2$ (s)", value=0.5, min_value=0.01)
-        config["t_carga"]       = st.number_input("Instante de aplicação da carga — $t_{carga}$ (s)", value=0.1, min_value=0.0)
+        config["t_carga"]       = st.number_input("Instante de aplicação da carga — $t_{carga}$ (s)", value=1.0, min_value=0.0)
         _ibox(f"Tensão inicial = {config['voltage_ratio']*100:.0f}% de V<sub>l</sub> nominal.")
 
     elif exp_type == "soft":
@@ -339,7 +339,7 @@ def render_experiment_config(mp: MachineParams) -> dict:
         config["t_2"]           = st.number_input("Início da rampa de tensão — $t_2$ (s)", value=0.9, min_value=0.0)
         config["t_pico"]        = st.number_input("Tempo para atingir tensão nominal — $t_{pico}$ (s)", value=5.0, min_value=0.1)
         config["Tl_final"]      = st.number_input("Torque de carga — $T_l$ (N·m)", value=80.0, min_value=0.0)
-        config["t_carga"]       = st.number_input("Instante de aplicação da carga — $t_{carga}$ (s)", value=0.1, min_value=0.0)
+        config["t_carga"]       = st.number_input("Instante de aplicação da carga — $t_{carga}$ (s)", value=1.0, min_value=0.0)
 
     elif exp_type == "carga":
         Tl_nom = st.number_input("Torque nominal de referência — $T_{nom}$ (N·m)", value=80.0, min_value=0.1)
@@ -353,7 +353,7 @@ def render_experiment_config(mp: MachineParams) -> dict:
         Tl_nom = st.number_input("Torque de carga durante o pulso — $T_l$ (N·m)", value=80.0, min_value=0.1)
         pct    = st.number_input("Porcentagem de Carga (%)", value=100.0, min_value=0.1)
         config["Tl_final"] = Tl_nom * pct / 100.0
-        t_on  = st.number_input("Instante de aplicação da carga — $t_{on}$ (s)",  value=0.5,  min_value=0.0, step=0.1, format="%.2f")
+        t_on  = st.number_input("Instante de aplicação da carga — $t_{on}$ (s)",  value=1.0,  min_value=0.0, step=0.1, format="%.2f")
         t_off = st.number_input("Instante de retirada da carga — $t_{off}$ (s)", value=1.5,  min_value=0.0, step=0.1, format="%.2f")
         config["t_carga"]    = t_on
         config["t_retirada"] = t_off
