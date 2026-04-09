@@ -1,0 +1,198 @@
+from __future__ import annotations
+import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+
+_LINE_COLORS_DARK  = ["#FFFFFF","#FFFFFF","#FFFFFF","#a78bfa",
+                      "#ffffff","#14b8a6","#f59e0b","#6366f1",
+                      "#84cc16","#ef4444","#06b6d4","#d946ef"]
+_LINE_COLORS_LIGHT = ["#000000","#000000","#000000","#000000",
+                      "#000000","#000000","#000000","#000000",
+                      "#000000","#000000","#000000","#000000"]
+
+
+def _colors(dark: bool) -> list:
+    return _LINE_COLORS_DARK if dark else _LINE_COLORS_LIGHT
+
+
+def _plot_theme(dark: bool) -> dict:
+    return dict(
+        plot_bg  = "#000000" if dark else "#ffffff",
+        paper_bg = "#161b27" if dark else "#ffffff",
+        fg       = "#ffffff" if dark else "#000000",
+        grid     = "#ffffff" if dark else "#B9ADAD",
+    )
+
+
+def build_fig_stacked(res, var_keys, var_labels, dark, t_events, decimals=2) -> go.Figure:
+    n = len(var_keys)
+    pt = _plot_theme(dark)
+    cols = _colors(dark)
+
+    fig = make_subplots(
+        rows=n, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=max(0.05, 0.07/max(n,1)),
+    )
+    t = res["t"]
+    for i, (key, lbl) in enumerate(zip(var_keys, var_labels), 1):
+        col = cols[(i-1) % len(cols)]
+        fig.add_trace(go.Scatter(
+            x=t, y=res[key], mode="lines", name=lbl,
+            line=dict(color=col, width=1.9),
+            hovertemplate=f"<b>{lbl}</b><br>t = %{{x:.4f}} s<br>valor = %{{y:.{decimals}f}}<extra></extra>",
+        ), row=i, col=1)
+        for te in (t_events or []):
+            fig.add_vline(x=te, line_dash="dot", line_color="#000000",
+                          line_width=1.1, row=i, col=1)
+        fig.update_yaxes(row=i, col=1,
+                         title_text=lbl,
+                         title_font=dict(size=12, color=pt["fg"]),
+                         showgrid=True, gridcolor=pt["grid"], gridwidth=0.4,
+                         zeroline=True, zerolinecolor=pt["grid"],
+                         tickfont=dict(size=10, color=pt["fg"]),
+                         exponentformat="none",
+                         autorange=True,
+                         rangemode="normal",
+                         fixedrange=False)
+
+    fig.update_xaxes(row=n, col=1, title_text="Tempo (s)",
+                     showgrid=True, gridcolor=pt["grid"], gridwidth=0.4,
+                     tickfont=dict(size=10, color=pt["fg"]))
+    fig.update_xaxes(uirevision="x_shared")
+    fig.update_yaxes(uirevision="y_auto")
+    fig.update_layout(
+        height=max(300, 280*n),
+        paper_bgcolor=pt["paper_bg"], plot_bgcolor=pt["plot_bg"],
+        font=dict(family="Inter, system-ui", size=11, color=pt["fg"]),
+        margin=dict(l=55, r=20, t=45, b=40),
+        hovermode="x unified", showlegend=False,
+        uirevision="layout",
+    )
+    return fig
+
+
+def build_fig_sidebyside(res, var_keys, var_labels, dark, t_events, decimals=2,
+                         res_ref=None, ref_color="#888888", ref_dash="dash") -> list[go.Figure]:
+    cols = _colors(dark)
+    figs = []
+    t    = res["t"]
+    th   = _plot_theme(dark)
+    for i, (key, lbl) in enumerate(zip(var_keys, var_labels)):
+        col = cols[i % len(cols)]
+        fig = go.Figure()
+        if res_ref is not None and key in res_ref:
+            fig.add_trace(go.Scatter(
+                x=res_ref["t"], y=res_ref[key], mode="lines", name="Referência",
+                line=dict(color=ref_color, width=1.4, dash=ref_dash),
+                hovertemplate=f"<b>Ref.</b><br>t = %{{x:.4f}} s<br>valor = %{{y:.{decimals}f}}<extra></extra>",
+            ))
+        fig.add_trace(go.Scatter(
+            x=t, y=res[key], mode="lines", name=lbl,
+            line=dict(color=col, width=1.8),
+            hovertemplate=f"<b>{lbl}</b><br>t = %{{x:.4f}} s<br>valor = %{{y:.{decimals}f}}<extra></extra>",
+        ))
+        for te in (t_events or []):
+            fig.add_vline(x=te, line_dash="dot", line_color="#000000", line_width=1.1)
+        # marcador de pico
+        y_arr   = np.asarray(res[key])
+        pk_idx  = int(np.argmax(np.abs(y_arr)))
+        pk_val  = float(y_arr[pk_idx])
+        pk_t    = float(t[pk_idx])
+        fig.add_trace(go.Scatter(
+            x=[pk_t], y=[pk_val], mode="markers", name="Pico",
+            marker=dict(color="#ef4444", size=8, symbol="triangle-down" if pk_val >= 0 else "triangle-up"),
+            hovertemplate=f"Pico: {pk_val:.{decimals}f}<br>t = {pk_t:.4f} s<extra></extra>",
+            showlegend=False,
+        ))
+        # linha de RMS em regime (se disponível)
+        rms_key = f"{key}_rms"
+        if rms_key in res:
+            rms_val = float(res[rms_key])
+            fig.add_hline(y=rms_val, line_dash="dash", line_color="#22c55e", line_width=1.1,
+                          annotation_text=f"RMS = {rms_val:.{decimals}f}",
+                          annotation_font_color="#22c55e", annotation_font_size=8,
+                          annotation_position="bottom right")
+        fig.update_layout(
+            title=dict(text=lbl, x=0.5, xanchor="center",
+                       font=dict(size=12, color=th["fg"])),
+            height=230,
+            paper_bgcolor=th["paper_bg"], plot_bgcolor=th["plot_bg"],
+            font=dict(family="Inter, system-ui", size=10, color=th["fg"]),
+            margin=dict(l=45, r=12, t=36, b=36),
+            xaxis=dict(title="Tempo (s)", showgrid=True,
+                       gridcolor=th["grid"], tickfont=dict(size=9, color=th["fg"])),
+            yaxis=dict(showgrid=True, gridcolor=th["grid"],
+                       zeroline=True, zerolinecolor=th["grid"],
+                       tickfont=dict(size=9, color=th["fg"]),
+                       exponentformat="none",
+                       autorange=True, rangemode="normal", fixedrange=False),
+            hovermode="x unified", showlegend=False,
+        )
+        figs.append(fig)
+    return figs
+
+
+def build_fig_overlay(res, var_keys, var_labels, dark, t_events, decimals=2,
+                      res_ref=None, ref_color="#888888", ref_dash="dash") -> go.Figure:
+    pt   = _plot_theme(dark)
+    cols = _colors(dark)
+    t    = res["t"]
+
+    right_units = {"n", "wr"}
+    has_right   = any(k in right_units for k in var_keys)
+
+    fig = go.Figure()
+    if res_ref is not None:
+        for key, lbl in zip(var_keys, var_labels):
+            if key not in res_ref:
+                continue
+            yaxis = "y2" if (key in right_units and has_right) else "y"
+            fig.add_trace(go.Scatter(
+                x=res_ref["t"], y=res_ref[key], mode="lines",
+                name=f"Ref. {lbl}", yaxis=yaxis,
+                line=dict(color=ref_color, width=1.4, dash=ref_dash),
+                hovertemplate=f"<b>Ref. {lbl}</b><br>t = %{{x:.4f}} s<br>valor = %{{y:.{decimals}f}}<extra></extra>",
+            ))
+    for i, (key, lbl) in enumerate(zip(var_keys, var_labels)):
+        col   = cols[i % len(cols)]
+        yaxis = "y2" if (key in right_units and has_right) else "y"
+        fig.add_trace(go.Scatter(
+            x=t, y=res[key], mode="lines", name=lbl,
+            line=dict(color=col, width=1.9), yaxis=yaxis,
+            hovertemplate=f"<b>{lbl}</b><br>t = %{{x:.4f}} s<br>valor = %{{y:.{decimals}f}}<extra></extra>",
+        ))
+    for te in (t_events or []):
+        fig.add_vline(x=te, line_dash="dot", line_color="#000000", line_width=1.1)
+
+    y2_cfg = dict(
+        overlaying="y", side="right",
+        showgrid=False, zeroline=False,
+        tickfont=dict(size=10, color=pt["fg"]),
+        exponentformat="none",
+        autorange=True, rangemode="normal", fixedrange=False,
+    ) if has_right else {}
+
+    fig.update_layout(
+        height=380,
+        title=dict(text="Curvas Sobrepostas", x=0.5, xanchor="center",
+                   font=dict(size=12, color=pt["fg"])),
+        paper_bgcolor=pt["paper_bg"], plot_bgcolor=pt["plot_bg"],
+        font=dict(family="Inter, system-ui", size=11, color=pt["fg"]),
+        margin=dict(l=55, r=65 if has_right else 20, t=48, b=40),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.01,
+                    xanchor="right", x=1, font=dict(size=10),
+                    bgcolor="rgba(0,0,0,0)"),
+        xaxis=dict(title="Tempo (s)", showgrid=True,
+                   gridcolor=pt["grid"], gridwidth=0.4,
+                   tickfont=dict(size=10, color=pt["fg"])),
+        yaxis=dict(showgrid=True, gridcolor=pt["grid"],
+                   zeroline=True, zerolinecolor=pt["grid"],
+                   tickfont=dict(size=10, color=pt["fg"]),
+                   exponentformat="none",
+                   autorange=True, rangemode="normal", fixedrange=False),
+        yaxis2=y2_cfg if has_right else {},
+    )
+    return fig

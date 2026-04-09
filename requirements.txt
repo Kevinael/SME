@@ -1,0 +1,17 @@
+# requirements.txt — EMS_BASE.py + ems_streamlit.py
+# Dependencias para execucao do simulador de maquina de inducao trifasica.
+#
+# Instalacao:
+#   pip install -r requirements.txt
+#   pip install -r 'requirements.txt'
+#
+# Versoes minimas recomendadas (testadas com Python 3.9+)
+
+numpy>=1.23.0
+scipy>=1.9.0
+matplotlib>=3.6.0
+streamlit>=1.32.0
+plotly>=5.18.0
+schemdraw>=0.19.0
+fpdf2>=2.7.0
+kaleido>=0.2.1
