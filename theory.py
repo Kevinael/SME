@@ -738,108 +738,107 @@ def _render_tab_dinamica_operacao() -> None:
     )
 
     # ═══════════════════════════════════════════════════════════════════════
-    # CARD 3 — FRENAGEM E PARADA  (com gráfico comparativo)
+    # CARD 3 — FRENAGEM E PARADA  (com gráfico comparativo n×t)
     # ═══════════════════════════════════════════════════════════════════════
-    _tb   = np.linspace(0.0, 2.5, 800)
+    _tb   = np.linspace(0.0, 2.6, 900)
     n_nom = 1760.0
-    n_plug  = np.maximum(0.0, n_nom * (1 - _tb / 0.40))
-    n_regen = n_nom * np.exp(-_tb / 0.55)
-    n_dc    = n_nom * np.exp(-_tb / 1.10)
+    t_plug_stop = 0.35          # plugging: parada em ~0,35 s
 
-    fig3, ax = plt.subplots(figsize=(8, 4.0))
+    # Contracorrente (plugging): descida linear + inversão se não desconectado
+    _n_plug_motor = n_nom * (1.0 - _tb / t_plug_stop)
+    _n_plug_full  = np.where(_tb <= t_plug_stop + 0.9,
+                             _n_plug_motor,
+                             _n_plug_motor)        # calcula só para anotação
+
+    # Injeção de CC: decaimento exponencial mais lento
+    tau_dc  = 1.05
+    _n_dc   = n_nom * np.exp(-_tb / tau_dc)
+
+    # Regenerativa: decaimento exponencial intermediário
+    tau_reg = 0.55
+    _n_reg  = n_nom * np.exp(-_tb / tau_reg)
+
+    # --- máscara para não plotar plugging abaixo de 0 (parada obrigatória) ---
+    mask_plug = _tb <= t_plug_stop
+
+    fig3, ax3 = plt.subplots(figsize=(8, 4.2))
     fig3.patch.set_facecolor("white")
-    _style_ax(ax)
+    _style_ax(ax3)
 
-    ax.plot(_tb, n_plug,  color="#c62828", linewidth=2.2, label="Contracorrente (Plugging)")
-    ax.plot(_tb, n_regen, color="#e65100", linewidth=2.2, linestyle="--", label="Regenerativa")
-    ax.plot(_tb, n_dc,    color="#1565c0", linewidth=2.2, linestyle=":",  label="Injeção CC")
-    ax.axhline(0, color="#aaaaaa", linewidth=0.9)
+    ax3.plot(_tb[mask_plug], _n_plug_motor[mask_plug],
+             color="#c62828", linewidth=2.3, label="Contracorrente (Plugging)")
+    # extensão tracejada mostrando risco de inversão
+    ax3.plot(_tb[~mask_plug][: int(0.35 / (_tb[1] - _tb[0]))],
+             _n_plug_motor[~mask_plug][: int(0.35 / (_tb[1] - _tb[0]))],
+             color="#c62828", linewidth=1.6, linestyle="--", alpha=0.55)
 
-    ax.set_xlabel("Tempo desde o início da frenagem (s)", fontsize=10, fontweight="bold", color="#222")
-    ax.set_ylabel("Velocidade (rpm)",                      fontsize=10, fontweight="bold", color="#222")
-    ax.set_title("Comparação dos Métodos de Frenagem — $n\\,(t)$",
-                 fontsize=11, fontweight="bold", color="#111")
-    ax.legend(fontsize=9.5, facecolor="white", edgecolor="#cccccc")
-    ax.set_xlim(0, 2.5)
-    ax.set_ylim(-30, n_nom * 1.06)
+    ax3.plot(_tb, _n_reg, color="#e65100", linewidth=2.3, linestyle="--",
+             label="Regenerativa")
+    ax3.plot(_tb, _n_dc,  color="#1565c0", linewidth=2.3, linestyle=":",
+             label="Injeção de CC")
+
+    ax3.axhline(0, color="#aaaaaa", linewidth=0.9, linestyle="-")
+    ax3.axhline(n_nom, color="#cccccc", linewidth=0.8, linestyle=":")
+
+    # anotação: desconectar no zero (plugging)
+    ax3.annotate("Desconectar em\n$n = 0$ (plugging)",
+                 xy=(t_plug_stop, 0),
+                 xytext=(t_plug_stop + 0.25, n_nom * 0.18),
+                 color="#c62828", fontsize=8.5,
+                 arrowprops=dict(arrowstyle="->", color="#c62828", lw=1.2))
+
+    ax3.set_xlabel("Tempo desde o início da frenagem (s)",
+                   fontsize=10, fontweight="bold", color="#222")
+    ax3.set_ylabel("Velocidade (rpm)", fontsize=10, fontweight="bold", color="#222")
+    ax3.set_title("Comparação dos Métodos de Frenagem — $n(t)$",
+                  fontsize=11, fontweight="bold", color="#111")
+    ax3.legend(fontsize=9.5, facecolor="white", edgecolor="#cccccc")
+    ax3.set_xlim(0, 2.6)
+    ax3.set_ylim(-200, n_nom * 1.12)
     fig3.tight_layout()
     _chart3 = _fig_to_b64(fig3)
 
-    _card(
-        "Frenagem e Parada — Métodos Eletromecânicos",
-        f"""
-        <p {_P}>
-        A parada controlada de um motor de indução pode ser obtida por três métodos com
-        princípios físicos distintos. Cada um atua em uma região diferente da curva
-        $T \\times s$ e impõe condições específicas de corrente, temperatura e precisão
-        de parada.
-        </p>
-
-        <hr style="border:none;border-top:1px solid #ddd;margin:.8rem 0;">
-
-        <p {_P}><strong style="font-size:1rem;">1 — Frenagem Regenerativa</strong>
-        &nbsp;<em>(s negativo)</em></p>
-        <p {_P}>
-        <strong>Princípio:</strong> a velocidade do rotor é forçada acima de $n_s$ —
-        por torque mecânico externo (turbina, gravidade) ou redução brusca da frequência
-        de referência em um inversor. O escorregamento torna-se negativo e a máquina
-        passa a devolver potência à rede:
-        </p>
-        {_eq(r"s < 0 \;\Rightarrow\; P_{ag} < 0 \;\Rightarrow\; \text{energia devolvida \`{a} rede}")}
-        <p {_P}>
-        <strong>Vantagem:</strong> método mais eficiente — a energia cinética é
-        convertida em energia elétrica útil em vez de ser dissipada como calor.
-        Desaceleração suave e controlável; sem risco de inversão de movimento.<br>
-        <strong>Limitação:</strong> exige rede ou barramento CC capaz de absorver a
-        energia regenerada. Não se aplica a acionamentos diretos sem inversor.
-        </p>
-
-        <hr style="border:none;border-top:1px solid #ddd;margin:.8rem 0;">
-
-        <p {_P}><strong style="font-size:1rem;">2 — Frenagem por Contracorrente
-        (Plugging)</strong> &nbsp;<em>(s maior que 1)</em></p>
-        <p {_P}>
-        <strong>Princípio:</strong> inverte-se a sequência de fases do estator com o
-        motor ainda girando. O campo girante passa a rotar em sentido contrário ao rotor,
-        criando escorregamento acima de 1. O torque eletromagnético opõe-se ao movimento
-        com intensidade máxima, desacelerando o rotor em poucos ciclos:
-        </p>
-        {_eq(r"s = \frac{n_s - n}{n_s} > 1 \quad (n_s \text{ invertida, } n \text{ positiva})")}
-        <p {_P}>
-        <strong>Vantagem:</strong> método mais rápido de parada entre os três.<br>
-        <strong>Limitação crítica:</strong> as perdas Joule no rotor equivalem a
-        $s \\cdot P_{{ag}}$, com $s > 1$, superando a potência de entreferro — aquecimento
-        severo, operação limitada a segundos. Uma chave de corte deve atuar exatamente
-        em $n = 0$; caso contrário, o motor inverte o sentido de rotação.
-        </p>
-
-        <hr style="border:none;border-top:1px solid #ddd;margin:.8rem 0;">
-
-        <p {_P}><strong style="font-size:1rem;">3 — Injeção de Corrente Contínua
-        (Frenagem CC)</strong></p>
-        <p {_P}>
-        <strong>Princípio:</strong> a alimentação trifásica é desconectada e aplica-se
-        tensão CC a dois terminais do estator. A corrente contínua cria um campo
-        magnético estacionário no entreferro. O rotor em movimento corta esse campo,
-        induzindo correntes rotóricas que geram um torque de frenagem proporcional
-        à velocidade — que se anula naturalmente em repouso:
-        </p>
-        {_eq(r"T_{brake} \propto \omega_r \;\xrightarrow{\;\omega_r \to 0\;}\; 0")}
-        <p {_P}>
-        <strong>Vantagem:</strong> parada suave; o torque decai a zero em $\\omega_r = 0$
-        sem risco de inversão e sem necessidade de chave de corte. O calor é
-        dissipado no estator, permitindo ciclos mais frequentes que o plugging.<br>
-        <strong>Limitação:</strong> desaceleração mais lenta. Requer retificador e
-        controle da corrente CC injetada.
-        </p>
-
-        <hr style="border:none;border-top:1px solid #ddd;margin:.8rem 0;">
-
-        <p {_P}>O gráfico compara a evolução de $n(t)$ nos três métodos a partir do
-        mesmo ponto de regime permanente:</p>
-        <div style="margin:.6rem 0 .4rem 0;">{_chart3}</div>
-        """,
-    )
+    _p = f'<p {_P}>'
+    _body3 = "".join([
+        _p,
+        "Em diversas aplica\u00e7\u00f5es \u2014 guindastes, prensas, correias transportadoras \u2014"
+        " a parada por in\u00e9rcia \u00e9 inaceit\u00e1vel por raz\u00f5es de seguran\u00e7a ou produtividade."
+        " Existem tr\u00eas m\u00e9todos de frenagem ativa para motores de indu\u00e7\u00e3o, cada um com"
+        " princ\u00edpio f\u00edsico, velocidade de parada e custo t\u00e9rmico distintos.",
+        "</p>",
+        f'<p {_P}><strong>1. Frenagem Regenerativa</strong> \u2014'
+        " ocorre quando a carga impulsiona o rotor acima de $n_s$, tornando $s$ negativo."
+        " O fluxo de pot\u00eancia se inverte: a m\u00e1quina converte energia cin\u00e9tica do eixo em"
+        " energia el\u00e9trica devolvida \u00e0 rede. \u00c9 o m\u00e9todo mais eficiente, mas exige que o"
+        " sistema receptor (inversor com ponte regenerativa ou resistor de frenagem) consiga"
+        " absorver o retorno de energia."
+        "</p>",
+        _eq(r"s < 0 \;\Rightarrow\; P_{ag} < 0 \;\Rightarrow\; \text{pot\^{e}ncia devolvida \grave{a} rede}"),
+        f'<p {_P}><strong>2. Contracorrente (Plugging)</strong> \u2014'
+        " duas das tr\u00eas fases da alimenta\u00e7\u00e3o s\u00e3o invertidas com o motor em movimento."
+        " O campo girante reverte instantaneamente, produzindo escorregamento $s \\approx 2$"
+        " e torque contr\u00e1rio ao movimento. A parada \u00e9 a mais r\u00e1pida, por\u00e9m as correntes"
+        " ultrapassam as de partida e o calor dissipado no rotor \u00e9 severo. O motor"
+        " <em>deve</em> ser desconectado exatamente em $n = 0$; caso contr\u00e1rio acelera"
+        " no sentido oposto."
+        "</p>",
+        _eq(r"s = \frac{n_s - n}{n_s} \approx 2 \quad (n_s \text{ invertida, } n \text{ positiva})"),
+        f'<p {_P}><strong>3. Inje\u00e7\u00e3o de Corrente Cont\u00ednua (CC)</strong> \u2014'
+        " a alimenta\u00e7\u00e3o trif\u00e1sica \u00e9 desconectada e aplica-se tens\u00e3o CC a dois terminais"
+        " do estator. O campo fixo resultante interage com os condutores do rotor em"
+        " movimento, induzindo correntes que produzem torque de frenagem proporcional"
+        " \u00e0 velocidade \u2014 que se anula naturalmente em $n = 0$, eliminando o risco"
+        " de invers\u00e3o. A parada \u00e9 mais lenta, por\u00e9m suave e precisa."
+        "</p>",
+        _eq(r"T_{brake} \propto \omega_r \;\xrightarrow{\;\omega_r \to 0\;}\; 0"),
+        f'<p {_P}>'
+        "O gr\u00e1fico compara $n(t)$ para os tr\u00eas m\u00e9todos a partir do mesmo ponto nominal."
+        " A linha tracejada vermelha indica o que ocorre se o plugging"
+        " <em>n\u00e3o</em> for interrompido no zero:"
+        "</p>",
+        f'<div style="margin:1.2rem 0 0.4rem 0;">{_chart3}</div>',
+    ])
+    _card("Frenagem e Parada Controlada", _body3)
 
 
 # ABA 4 — GUIA DE SENSIBILIDADE DE PARÂMETROS
@@ -1285,13 +1284,13 @@ def render_theory_tab() -> None:
         "selecione uma aba para explorar o tema desejado."
     )
 
-    tab1, tab2, tab3, tab4, tab5= st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6= st.tabs([
         "1 - Modelagem e Circuitos",
         "2 - Dinâmica e Torque",
         "3 - Balanço Energético",
         "4 - Sensibilidade de Parâmetros",
-        "5 - Configurações e Alertas"
-        #"6 - Dinâmica de Operação",
+        "5 - Configurações e Alertas",
+        "6 - Dinâmica de Operação",
     ])
 
     with tab1:
@@ -1314,6 +1313,6 @@ def render_theory_tab() -> None:
         st.markdown("## Configurações de Simulação e Alertas")
         _render_tab_config()
 
-    #with tab6:
-      #  st.markdown("## Dinâmica de Operação")
-      #  _render_tab_dinamica_operacao()
+    with tab6:
+        st.markdown("## Dinâmica de Operação")
+        _render_tab_dinamica_operacao()

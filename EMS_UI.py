@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import re
+from typing import Any
 import numpy as np
 import streamlit as st
 import plotly.graph_objects as go
@@ -130,28 +131,57 @@ _DEFAULTS = dict(
 
 # Mapeamento: campo lógico → key do widget no session_state
 _WK = {
-    "Vl":         "wi_Vl",
-    "f":          "wi_f",
-    "Rs":         "wi_Rs",
-    "Rr":         "wi_Rr",
-    "input_mode": "wi_input_mode",
-    "f_ref":      "wi_f_ref",
-    "Xm":         "wi_Xm",    # reatância (Ω) no modo X
-    "Xls":        "wi_Xls",
-    "Xlr":        "wi_Xlr",
-    "Xm_L":       "wi_Xm_L",  # indutância (H) no modo L
-    "Xls_L":      "wi_Xls_L",
-    "Xlr_L":      "wi_Xlr_L",
-    "Rfe":        "wi_Rfe",
-    "p":          "wi_p",
-    "J":          "wi_J",
-    "B":          "wi_B",
+    "Vl":           "wi_Vl",
+    "f":            "wi_f",
+    "Rs":           "wi_Rs",
+    "Rr":           "wi_Rr",
+    "input_mode":   "wi_input_mode",
+    "f_ref":        "wi_f_ref",
+    "Xm":           "wi_Xm",    # reatância (Ω) no modo X
+    "Xls":          "wi_Xls",
+    "Xlr":          "wi_Xlr",
+    "Xm_L":         "wi_Xm_L",  # indutância (H) no modo L
+    "Xls_L":        "wi_Xls_L",
+    "Xlr_L":        "wi_Xlr_L",
+    "Rfe":          "wi_Rfe",
+    "p":            "wi_p",
+    "J":            "wi_J",
+    "B":            "wi_B",
     # experimento
-    "exp_type":   "exp_select",
-    "Tl_final":   "wi_Tl_final",
-    "t_carga":    "wi_t_carga",
-    "tmax":       "wi_tmax",
-    "h":          "wi_h",
+    "exp_type":     "exp_select",
+    "Tl_final":     "wi_Tl_final",
+    "t_carga":      "wi_t_carga",
+    "Tl_pulso":     "wi_Tl_pulso",    # pulso_carga: torque do pulso
+    "t_pulso_on":   "wi_t_pulso_on",  # pulso_carga: instante de aplicação
+    "t_pulso_off":  "wi_t_pulso_off", # pulso_carga: instante de retirada
+    "tmax":         "wi_tmax",
+    "h":            "wi_h",
+}
+
+# ── Presets de motores catalogados ───────────────────────────────────────────
+_PRESETS: dict[str, dict[str, Any]] = {
+    "Padrão": {
+        # Elétricos
+        "Vl": 220.0, "f": 60.0, "Rs": 0.435, "Rr": 0.816,
+        "input_mode": "Reatâncias (Ω)  —  medidas em $f_{ref}$",
+        "f_ref": 60.0, "Xm": 26.13, "Xls": 0.754, "Xlr": 0.754, "Rfe": 500.0,
+        # Mecânicos
+        "p": 4, "J": 0.089, "B": 0.005,
+        # Experimento
+        "exp_type": "Partida Direta (DOL)",
+    },
+    "Usta (2024)": {
+        # Elétricos
+        "Vl": 220.0, "f": 50.0, "Rs": 2.65, "Rr": 2.85,
+        "input_mode": "Reatâncias (Ω)  —  medidas em $f_{ref}$",
+        "f_ref": 50.0, "Xm": 60.98, "Xls": 4.43, "Xlr": 5.69, "Rfe": 500.0,
+        # Mecânicos
+        "p": 4, "J": 0.025, "B": 0.001,
+        # Experimento
+        "exp_type": "Pulso de Carga (aplica e retira)",
+        "Tl_pulso": 10.0, "t_pulso_on": 0.6, "t_pulso_off": 0.8,
+        "tmax": 1.0,
+    },
 }
 
 # Valores de radio como aparecem na UI
@@ -180,6 +210,40 @@ def _validate_params(mp) -> None:
 def render_machine_params(dark: bool, experiment_mode: bool) -> tuple[MachineParams, int]:
     """Coluna esquerda: todos os campos de parâmetros. Retorna (mp, ref_code)."""
     st.markdown('<p class="slabel">Parâmetros Físicos da Máquina</p>', unsafe_allow_html=True)
+
+    # ── Presets ───────────────────────────────────────────────────────────────
+    # Reset flag must be applied BEFORE the selectbox widget is instantiated
+    if st.session_state.pop("_reset_preset_select", False):
+        st.session_state["preset_select"] = "— Selecionar preset —"
+
+    pc1, pc2 = st.columns([3, 1])
+    with pc1:
+        preset_sel = st.selectbox(
+            "Preset",
+            ["— Selecionar preset —"] + list(_PRESETS.keys()),
+            label_visibility="collapsed",
+            key="preset_select",
+        )
+    with pc2:
+        if st.button("Carregar", key="btn_load_preset", width="stretch",
+                     disabled=(preset_sel == "— Selecionar preset —")):
+            pdata = _PRESETS[preset_sel]
+            _wk_preset = {
+                "Vl": _WK["Vl"], "f": _WK["f"], "Rs": _WK["Rs"], "Rr": _WK["Rr"],
+                "input_mode": _WK["input_mode"], "f_ref": _WK["f_ref"],
+                "Xm": _WK["Xm"], "Xls": _WK["Xls"], "Xlr": _WK["Xlr"],
+                "Rfe": _WK["Rfe"], "p": _WK["p"], "J": _WK["J"], "B": _WK["B"],
+                "exp_type": _WK["exp_type"],
+                "Tl_pulso": _WK["Tl_pulso"],
+                "t_pulso_on": _WK["t_pulso_on"],
+                "t_pulso_off": _WK["t_pulso_off"],
+                "tmax": _WK["tmax"],
+            }
+            for key, wk in _wk_preset.items():
+                if key in pdata:
+                    st.session_state[wk] = pdata[key]
+            st.session_state["_reset_preset_select"] = True
+            st.rerun()
 
     if experiment_mode:
         _ibox("<strong>Parâmetros travados</strong> — desative o toggle para editar.")
@@ -312,11 +376,11 @@ def render_experiment_config(mp: MachineParams) -> dict:
         _ibox(f"Torque aplicado: <strong>{config['Tl_final']:.2f} N.m</strong> ({pct}% de {Tl_nom:.1f} N.m) — {regime}.")
 
     elif exp_type == "pulso_carga":
-        Tl_nom = st.number_input("Torque de carga durante o pulso — $T_l$ (N·m)", value=10.0 , min_value=0.1)
+        Tl_nom = st.number_input("Torque de carga durante o pulso — $T_l$ (N·m)", value=10.0, min_value=0.1, key=_WK["Tl_pulso"])
         pct    = st.number_input("Porcentagem de Carga (%)", value=100.0, min_value=0.1)
         config["Tl_final"] = Tl_nom * pct / 100.0
-        t_on  = st.number_input("Instante de aplicação da carga — $t_{on}$ (s)",  value=1.0,  min_value=0.0, step=0.1, format="%.2f")
-        t_off = st.number_input("Instante de retirada da carga — $t_{off}$ (s)", value=1.5,  min_value=0.0, step=0.1, format="%.2f")
+        t_on  = st.number_input("Instante de aplicação da carga — $t_{on}$ (s)",  value=1.0,  min_value=0.0, step=0.1, format="%.2f", key=_WK["t_pulso_on"])
+        t_off = st.number_input("Instante de retirada da carga — $t_{off}$ (s)", value=1.5,  min_value=0.0, step=0.1, format="%.2f", key=_WK["t_pulso_off"])
         config["t_carga"]    = t_on
         config["t_retirada"] = t_off
         if t_off <= t_on:
